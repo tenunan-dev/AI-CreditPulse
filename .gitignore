@@ -1,0 +1,9 @@
+# AI CreditPulse — dependencies & build outputs
+.DS_Store
+.build/
+*.xcodeproj
+.swiftpm/
+
+# Never commit real credentials
+.env
+**/.env
