@@ -2,21 +2,13 @@ import AICreditPulseCore
 import ServiceManagement
 import SwiftUI
 
-/// AI CreditPulse — menu bar agent (LSUIElement, no Dock icon). The status item
-/// and the main program window are assembled by the AppKit delegate so their
-/// lifecycle is explicit: the window closes without touching the agent, and
-/// Quit ends the whole process.
+/// AI CreditPulse — menu bar agent (LSUIElement, no Dock icon). Pure AppKit
+/// lifecycle (@main on the delegate): with no SwiftUI scenes in play there is
+/// no scene-window restoration, so no ghost "Settings"/stub window can pop up
+/// alongside the real program window at launch. The status item and the main
+/// window are assembled here, explicitly: the window closes without touching
+/// the agent, and Quit ends the whole process.
 @main
-struct AICreditPulseApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-
-    var body: some Scene {
-        // No SwiftUI scenes own windows here: the delegate drives everything
-        // (status bar + main window). Settings is a harmless never-shown stub.
-        Settings { EmptyView() }
-    }
-}
-
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var refreshTask: Task<Void, Never>?
@@ -111,6 +103,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.title = "AI CreditPulse"
             window.contentView = NSHostingView(rootView: MainWindowView())
             window.center()
+            // This app has no window restoration: nothing should resurrect the
+            // window (or a stale cached one) across relaunches.
+            window.isRestorable = false
             // Keep the instance alive when the user closes the window — the
             // agent must stay in the menu bar (memory stays owned by us).
             window.isReleasedWhenClosed = false
