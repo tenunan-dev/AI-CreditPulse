@@ -142,15 +142,18 @@ struct ProviderRow: View {
                 Text(error).font(.caption2)
                     .foregroundStyle(provider.isUnconfigured ? Color.secondary : Color.red)
             }
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
                 if let pct = provider.primaryUsagePercent {
-                    UsageBar(label: "5h", percent: pct)
+                    UsageBar(label: "5h", percent: provider.barPercent(pct),
+                             caption: provider.windowCaption(pct))
                 }
                 if let pct = provider.weeklyUsagePercent {
-                    UsageBar(label: "wk", percent: pct)
+                    UsageBar(label: "wk", percent: provider.barPercent(pct),
+                             caption: provider.windowCaption(pct))
                 }
                 if let pct = provider.monthlyUsagePercent {
-                    UsageBar(label: "mo", percent: pct)
+                    UsageBar(label: "mo", percent: provider.barPercent(pct),
+                             caption: provider.windowCaption(pct))
                 }
             }
         }
@@ -158,16 +161,19 @@ struct ProviderRow: View {
     }
 
     /// Green below 60%, amber from 60%, red from 90% or when limited/depleted
-    /// (the card's exact thresholds). A zero balance on a paid account is red;
-    /// with a free/trial plan it stays neutral grey. A row without a usable
-    /// credential reads as idle grey — not configured yet, not a fault.
+    /// (the card's exact thresholds). Percentages are consumption-normalized —
+    /// a `.left`-semantics provider is inverted here, or 5% remaining would
+    /// paint green. Zero balance on a paid account is red; with a free/trial
+    /// plan it stays neutral grey. An unconfigured row reads grey.
     private var dotColor: Color {
         if !provider.ok { return provider.isUnconfigured ? .gray : .red }
         if provider.limitReached { return .red }
         if provider.kind == .balance, let v = provider.value, v <= 0, !provider.unlimited {
             return ProviderRegistry.PlanFlags.isFreeOrTrial(provider.plan) ? .gray : .red
         }
-        let windows = [provider.primaryUsagePercent, provider.weeklyUsagePercent, provider.monthlyUsagePercent].compactMap(\.self)
+        let windows = [provider.effectivePrimaryUsagePercent,
+                       provider.effectiveWeeklyUsagePercent,
+                       provider.effectiveMonthlyUsagePercent].compactMap(\.self)
         if let maxUsed = windows.max() {
             if maxUsed >= 90 { return .red }
             if maxUsed >= 60 { return .orange }
@@ -200,22 +206,25 @@ struct ProviderRow: View {
     }
 }
 
-/// A single window bar with its tiny label; accent from 60%, red from 90%.
+/// A single window bar: volume label, semantic caption, and a thicker fill
+/// (5pt read like a hairline and hid 0% entirely). Accent from 60%, red from 90%.
 struct UsageBar: View {
     let label: String
     let percent: Double
+    var caption: String = ""
 
     var body: some View {
         HStack(spacing: 3) {
-            Text(label).font(.system(size: 9)).foregroundStyle(.secondary)
+            Text("· \(label) · \(caption)".dropFirst(2)).font(.system(size: 9))
+                .foregroundStyle(.secondary)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(.quaternary)
                     Capsule().fill(barColor).frame(width: max(2, geo.size.width * min(percent, 100) / 100))
                 }
             }
-            .frame(height: 5)
-            .frame(maxWidth: 90)
+            .frame(height: 8)
+            .frame(maxWidth: 110)
         }
     }
 

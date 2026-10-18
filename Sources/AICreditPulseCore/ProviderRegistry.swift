@@ -17,7 +17,14 @@ public protocol ProviderAdapter: Sendable {
 /// /summary route: providers fetch concurrently, and a failed adapter keeps its
 /// own identity in the summary rather than crashing the whole pull.
 public enum ProviderRegistry {
-    public static let adapters: [ProviderAdapter] = [
+    /// Builtins first, then the user's custom URL-key providers. Computed so a
+    /// freshly saved custom provider appears WITHOUT an app restart;
+    /// `snapshot()` re-reads this on every pull.
+    public static var adapters: [ProviderAdapter] {
+        builtin + CustomProviderStore.load().map(CustomProviderAdapter.init)
+    }
+
+    public static let builtin: [ProviderAdapter] = [
         NousAdapter(), CodexAdapter(), ClaudeAdapter(), ZAIAdapter(),
         OpenCodeAdapter(), CommandCodeAdapter(), DeepSeekAdapter(),
         OpenRouterAdapter(), ILMUAdapter(),
@@ -61,7 +68,9 @@ public enum ProviderRegistry {
                    !PlanFlags.isFreeOrTrial(p.plan) {
                     worst = worst.promote(.red)
                 }
-                let windows = [p.primaryUsagePercent, p.weeklyUsagePercent, p.monthlyUsagePercent].compactMap(\.self)
+                let windows = [p.effectivePrimaryUsagePercent,
+                               p.effectiveWeeklyUsagePercent,
+                               p.effectiveMonthlyUsagePercent].compactMap(\.self)
                 let maxUsed = windows.max()
                 if maxUsed != nil, maxUsed! >= 90 { worst = worst.promote(.red) }
                 else if maxUsed != nil, maxUsed! >= 60 { worst = worst.promote(.amber) }

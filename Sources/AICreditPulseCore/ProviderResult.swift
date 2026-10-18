@@ -31,6 +31,38 @@ public struct ProviderResult: Sendable, Equatable {
     public var weeklyUsagePercent: Double?
     public var monthlyUsagePercent: Double?
 
+    /// What the window percentages MEAN. Providers publish wildly different
+    /// directions (Anthropic's utilization = % used; several relays report
+    /// % remaining), and an unlabeled number reads backwards half the time.
+    /// `.used`  → the bar fills as the quota burns, "n% used".
+    /// `.left`  → the bar shows what REMAINS filled; the burned share is off.
+    public enum UsageSemantics: String, Sendable, Codable { case used, left }
+    public var usageSemantics: UsageSemantics = .used
+
+    /// The numeric percent the BAR should fill, after the semantic is applied:
+    /// "left" providers invert, so a row nearly out of credit paints red.
+    public func barPercent(_ pct: Double) -> Double {
+        usageSemantics == .left ? 100.0 - pct : pct
+    }
+
+    /// Unambiguous window caption, e.g. "43% used" / "43% left".
+    public func windowCaption(_ pct: Double) -> String {
+        String(format: "%.0f%% %@", pct,
+               usageSemantics == .left ? "left" : "used")
+    }
+
+    /// Percent measures of CONSUMPTION (what every threshold consumer wants).
+    /// A `.left` row is converted so status math never inverts by accident.
+    public var effectivePrimaryUsagePercent: Double? {
+        primaryUsagePercent.map(barPercent)
+    }
+    public var effectiveWeeklyUsagePercent: Double? {
+        weeklyUsagePercent.map(barPercent)
+    }
+    public var effectiveMonthlyUsagePercent: Double? {
+        monthlyUsagePercent.map(barPercent)
+    }
+
     public var limitReached: Bool
     /// Provider answered and reports no ceiling at all (OpenRouter with no
     /// per-key limit). Distinct from a failure.
@@ -63,6 +95,38 @@ public struct ProviderResult: Sendable, Equatable {
             renewalAt: nil, nextResetAt: nil, weeklyResetAt: nil, monthlyResetAt: nil,
             primaryUsagePercent: nil, weeklyUsagePercent: nil, monthlyUsagePercent: nil,
             limitReached: false, unlimited: false)
+    }
+
+    /// Public memberwise equivalent — full-control construction (tests, the
+    /// custom-provider adapter style). Prefer `unavailable` for error rows so
+    /// the safe-vocabulary voucher is applied centrally.
+    public init(
+        id: String, label: String, kind: Kind, value: Double?, unit: String,
+        detail: String, ok: Bool, error: String?, ts: Date, plan: String?,
+        renewalAt: Date?, nextResetAt: Date?, weeklyResetAt: Date?, monthlyResetAt: Date?,
+        primaryUsagePercent: Double?, weeklyUsagePercent: Double?, monthlyUsagePercent: Double?,
+        limitReached: Bool, unlimited: Bool, usageSemantics: UsageSemantics = .used
+    ) {
+        self.id = id
+        self.label = label
+        self.kind = kind
+        self.value = value
+        self.unit = unit
+        self.detail = detail
+        self.ok = ok
+        self.error = error
+        self.ts = ts
+        self.plan = plan
+        self.renewalAt = renewalAt
+        self.nextResetAt = nextResetAt
+        self.weeklyResetAt = weeklyResetAt
+        self.monthlyResetAt = monthlyResetAt
+        self.primaryUsagePercent = primaryUsagePercent
+        self.weeklyUsagePercent = weeklyUsagePercent
+        self.monthlyUsagePercent = monthlyUsagePercent
+        self.usageSemantics = usageSemantics
+        self.limitReached = limitReached
+        self.unlimited = unlimited
     }
 }
 

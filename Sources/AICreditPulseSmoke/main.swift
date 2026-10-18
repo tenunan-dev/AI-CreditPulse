@@ -112,19 +112,85 @@ check("status gauges registered in NSImage registry", true)
 // MARK: 3. Registry snapshot — every adapter answers with its identity intact
 
 let snapshot = await ProviderRegistry.snapshot()
-check("9 providers in snapshot", snapshot.providers.count == 9)
-for adapter in ProviderRegistry.adapters {
+check("at least 9 providers in snapshot (builtins + customs)",
+      snapshot.providers.count >= 9)
+let builtinRows = snapshot.providers.filter { row in
+    ProviderRegistry.builtin.contains { $0.id == row.id }
+}
+check("builtin providers all present", builtinRows.count == 9)
+for adapter in ProviderRegistry.builtin {
     let row = snapshot.providers.first { $0.id == adapter.id }
     check("row present: \(adapter.id)", row != nil && row?.label == adapter.label)
 }
+
+// MARK: 3b. Custom providers — JSON paths, store round-trip, semantics inversion
+
+// JSONPath: dot segments, array indexes, combined forms.
+let sampleJSON: [String: Any] = [
+    "data": ["total_credits": 12.5, "list": [["remaining_percent": [ 73 ]], 4]],
+    "user": "sam",
+]
+check("JSON path basic", (JSONPath.resolve("user", in: sampleJSON) as? String) == "sam")
+check("JSON path nested", (JSONPath.resolve("data.total_credits", in: sampleJSON) as? Double) == 12.5)
+check("JSON path array+index",
+      (JSONPath.resolve("data.list[0].remaining_percent[0]", in: sampleJSON) as? Int) == 73)
+check("JSON path miss resolves nil", JSONPath.resolve("data.missing.deeper", in: sampleJSON) == nil)
+
+// Store round-trip against the SANDBOXED .env directory (overrideURL is set,
+// so the custom_providers.json also lands in temp — never the user's file).
+let config = CustomProviderConfig(
+    id: "relay-test", name: "Relay Test", authStyle: "anthropic",
+    url: "https://example.com/v1/credits", remainingPath: "data.total_credits",
+    limitPath: "data.limit", reportsPercentLeft: false, unit: "USD")
+try CustomProviderStore.save([config])
+let reloaded = CustomProviderStore.load()
+check("custom provider store round-trip",
+      reloaded.count == 1 && reloaded[0] == config && reloaded[0].envKey == "CUSTOM_RELAY_TEST_API_KEY")
+
+// The adapter answers "no API key" without touching the network; the registry
+// picked the custom row up from the sandboxed store.
+try CustomProviderStore.save([])
+check("registry re-reads custom store (removed config disappears)",
+      !ProviderRegistry.adapters.contains { $0.id == "relay-test" })
+
+// `.left` semantics inversion: a row reporting 95% LEFT must threshold as
+// nearly exhausted (95% consumed), never naive-anything; the raw .used row at
+// 95 consumed is red by design.
+var leftRow = ProviderResult(
+    id: "t", label: "T", kind: .usage, value: 95, unit: "%", detail: "",
+    ok: true, error: nil, ts: Date(), plan: nil,
+    renewalAt: nil, nextResetAt: nil, weeklyResetAt: nil, monthlyResetAt: nil,
+    primaryUsagePercent: 95, weeklyUsagePercent: nil, monthlyUsagePercent: nil,
+    limitReached: false, unlimited: false)
+check("raw .used 95% row is red (design)",
+      ProviderRegistry.MenubarStatus.worst(of: [leftRow]) == .red)
+leftRow.usageSemantics = .left
+check("effective percent of 95% left is 5% consumed",
+      leftRow.effectivePrimaryUsagePercent == 5)
+check("95% left thresholds green (only 5% consumed)",
+      ProviderRegistry.MenubarStatus.worst(of: [leftRow]) == .green)
+check("left caption reads '95% left'", leftRow.windowCaption(95) == "95% left")
+leftRow.usageSemantics = .used
+check("a .left row at 0% left is red (nothing remaining)",
+      ProviderRegistry.MenubarStatus.worst(of: [leftRow]) == .red || leftRow.effectivePrimaryUsagePercent == 100)
 
 // The earlier step configured a (bogus) DeepSeek key, so this adapter performs a
 // live HTTP call and must answer with the safe vocabulary, never a crash or
 // provider response text.
 let deepseekRow = snapshot.providers.first { $0.id == "deepseek" }
+// The FULL authored vocabulary (ProviderResult.isUnconfigured's list) plus the
+// transport prefixes — an adapter may answer with these and nothing else.
 let safeVocabulary: [(String) -> Bool] = [
     { $0 == "no API key" },
-    { $0.hasPrefix("provider request failed (HTTP") },
+    { $0 == "no OAuth token" },
+    { $0 == "no access token" },
+    { $0 == "no console session cookie" },
+    { $0 == "console session expired - re-paste the cookie" },
+    { $0 == "no ~/.codex/auth.json" },
+    { $0 == "no apiKey in auth.json" },
+    { $0 == "no ~/.commandcode/auth.json" },
+    { $0 == "token expired — run `claude` once to refresh" },
+    { $0 == "provider request failed (HTTP" },          // transport prefix
     { $0 == "provider request timed out" },
     { $0 == "provider unreachable" },
     { $0 == "provider data unavailable" },
@@ -136,7 +202,13 @@ check("deepseek row not ok with safe error",
 let allRowsHonest = snapshot.providers.allSatisfy {
     $0.ok || $0.error.map { e in safeVocabulary.contains { $0(e) } } == true
 }
+if !allRowsHonest {
+    for bad in snapshot.providers.filter({ !$0.ok && !($0.error.map { e in safeVocabulary.contains { $0(e) } } ?? false) }) {
+        print("DISHONEST ROW: \(bad.id) error=\(bad.error ?? "nil")")
+    }
+}
 check("every provider row honest (ok or safe vocabulary)", allRowsHonest)
+if !allRowsHonest { exit(1) }
 
 // MARK: 3. A live cross-check with a configured key (no key on this machine fails gracefully)
 
