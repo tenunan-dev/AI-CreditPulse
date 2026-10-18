@@ -13,6 +13,7 @@ struct MainWindowView: View {
     @State private var expandedID: String? = nil         // gear open on this row
     @State private var configuredCount = 0
     @State private var saveError: String?
+    @State private var savedFlashKey: String? = nil      // most-recent verified key
 
     // Custom providers
     @State private var customs: [CustomProviderConfig] = []
@@ -181,11 +182,16 @@ struct MainWindowView: View {
                     }
                 }
                 HStack(spacing: 8) {
-                    SecureField("Credential", text: binding(for: envKey))
-                        .textFieldStyle(.roundedBorder)
+                    SecureKeyField(
+                        text: binding(for: envKey),
+                        onSubmit: { saveBuiltinKey(envKey) })
                         .frame(maxWidth: 320)
-                        .onSubmit { saveBuiltinKey(envKey) }
                     Button("Save") { saveBuiltinKey(envKey) }
+                    if savedFlashKey == envKey {
+                        // Unambiguous: the value is verified IN the file.
+                        Text("Saved ✓ in .env")
+                            .font(.caption).foregroundStyle(.green)
+                    }
                     if !hints.dropFirst().isEmpty {
                         Text("aliases:\(hints.dropFirst().joined(separator: " / "))")
                             .font(.caption2).foregroundStyle(.tertiary)
@@ -382,7 +388,16 @@ struct MainWindowView: View {
         do {
             try EnvStore.shared.update([envKey: keys[envKey] ?? ""])
             saveError = nil
+            savedFlashKey = envKey
             updateCount()
+            // The flash is feedback, not state — clear it after two seconds,
+            // unless a different key's save replaced it meanwhile.
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                await MainActor.run {
+                    if savedFlashKey == envKey { savedFlashKey = nil }
+                }
+            }
             Task { await app.refresh(force: true) }
         } catch {
             saveError = "Couldn't write .env"
@@ -450,6 +465,17 @@ struct CustomProviderEditor: View {
     @State private var keyConfigured = false
     @State private var formError: String?
     @State private var saveFlash = false
+    @State private var keyFlash = false
+
+    private func saveKey() {
+        guard keyValue.trimmingCharacters(in: .whitespaces).nonEmpty else { return }
+        onKeySave(activeEnvKey, keyValue)
+        keyFlash = true
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            await MainActor.run { keyFlash = false }
+        }
+    }
 
     /// The env slot this editor's key lives under: `config.envKey` once the id
     /// exists, otherwise derived from the typed name so "Save key" works in the
@@ -504,11 +530,17 @@ struct CustomProviderEditor: View {
                 .font(.caption2).foregroundStyle(.tertiary)
 
             HStack(spacing: 8) {
-                SecureField("API key for this provider", text: $keyValue)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { onKeySave(activeEnvKey, keyValue) }
-                Button("Save key") { onKeySave(activeEnvKey, keyValue) }
+                SecureKeyField(
+                    text: $keyValue,
+                    placeholder: "API key for this provider",
+                    onSubmit: { saveKey() })
+                    .frame(maxWidth: 320)
+                Button("Save key") { saveKey() }
                     .disabled(keyValue.trimmingCharacters(in: .whitespaces).isEmpty)
+                if keyFlash {
+                    Text("Key saved ✓ in .env")
+                        .font(.caption).foregroundStyle(.green)
+                }
             }
 
             HStack {
