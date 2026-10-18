@@ -11,6 +11,19 @@ import SwiftUI
 @main
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Explicit entry point. The synthesized `NSApplicationMain` would look for
+    /// a main nib to connect the delegate — this app has none, so without this
+    /// override the process runs with a nil delegate: no status item, no
+    /// window, "no action" when launched. Here we assemble everything by hand.
+    static func main() {
+        let app = NSApplication.shared
+        // LSUIElement is in the Info.plist; set the policy explicitly too so a
+        // bare-binary launch never grows a Dock icon.
+        app.setActivationPolicy(.accessory)
+        app.delegate = AppDelegate()
+        app.run()
+    }
+
     private var refreshTask: Task<Void, Never>?
     private var timer: Timer?
     private let status = StatusBarController()
@@ -78,6 +91,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in await self?.pull() }
         }
+    }
+
+    /// A second launch (launcher, Spotlight, `open`, Dock) while the agent is
+    /// already running must still DO something: pop the program window instead
+    /// of silently activating the hidden process.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showMainWindow()
+        return true
     }
 
     func applicationWillTerminate(_ notification: Notification) {
