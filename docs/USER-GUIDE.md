@@ -19,21 +19,22 @@ the visual overview, start with the top-level `README.md`.
 
 ## 2. Adding your keys
 
-Open the main window (dropdown → **Open AI CreditPulse**, or relaunch):
+Open the main window (dropdown → **Open AI CreditPulse**, or launch the app):
 
-1. In the **API keys** section, paste the credential for each provider you use.
-   Which credential?
-   - Most providers take an **API key** from their dashboard (each field has a
-     *Get key* link).
-   - **Claude Code** and **Codex** discover their credentials automatically
-     from the local CLIs (`claude`/`codex` logins); you usually don't fill them.
-   - **CommandCode** reads its local CLI auth automatically too.
+1. Find the provider's row and click the **gear icon** on its right — every
+   provider row carries its own settings editor (name, env-key slot, aliases,
+   a *Get key* link where applicable).
+2. Paste the credential. Which credential?
+   - Most providers take an **API key** from their dashboard.
+   - **Claude Code**, **Codex**, **CommandCode** discover credentials
+     automatically from the local CLIs — their editor notes there's nothing to
+     paste.
    - **ILMU** needs the `ilmu_session` **cookie** (browser devtools →
-     Application → Cookies → copy the value). The `sk-…` API key is NOT a cookie.
-2. Press **Enter** in a field, or click **Save to .env**.
-   - The field's dot turns ✓ green once the value is verified **in the file**,
-   - the counter updates: *Saved ✓ — N of 8 keys set*.
-3. Rows re-query immediately; the dropdown reflects new data within a second.
+     Application → Cookies → copy the value). The `sk-…` API key is NOT a
+     cookie. The editor states this right in the field row.
+3. Press **Enter** or **Save** — the ✓ dot confirms the value was verified
+   **in the file**, the footer count updates (*N of T keys set*), rows
+   re-query immediately.
 
 All 8 supported `.env` slot names:
 
@@ -108,7 +109,39 @@ its next save.
 | Old saved keys vanished | Older version's smoke test, past-mangled `.env` — current builds sanitize values and never touch your file from tests (checksummed). |
 | Want a clean start | Quit the app, delete `~/Library/Application Support/AI CreditPulse/.env`, relaunch (fresh skeleton is written for you). |
 
-## 8. Privacy
+## 8. Custom providers (your own endpoints)
+
+Use them for relays, gateways, or self-hosted servers that expose a balance as
+JSON. In the main window's **Custom providers** section → *Add custom provider*:
+
+- **Display name** → becomes the row label (also generates a stable
+  `CUSTOM_<NAME>_API_KEY` slot in `.env`).
+- **Balance URL** — the exact endpoint returning the JSON.
+- **Auth style** — *OpenAI-style* sends `Authorization: Bearer <key>`;
+  *Anthropic-style* sends `x-api-key` + `anthropic-version`.
+- **JSON path to REMAINING credit** — where the number lives, e.g.
+  `data.total_credits`; segments walk objects, `[0]` indexes arrays.
+- **Optional JSON path to LIMIT** — shown as context in the detail line.
+- **"% REMAINING" toggle** — flip when the endpoint reports a *percentage*
+  remaining rather than an amount: the bar and thresholds then treat the value
+  with semantics-aware inversion (5% left ≈ 95% consumed → red).
+- **Unit** — `USD`, `EUR`, `credits`, …
+
+Custom rows get the same gear editor (edit fields, save key, delete — deleting
+also clears that key from `.env`). The row counts toward the combined Σ when
+its unit is USD, and everything hot-reloads — no restart needed after changes.
+Config lives in `~/Library/Application Support/AI CreditPulse/custom_providers.json`
+(0600) next to the key file; hand-editing works and the row updates on next pull.
+
+## 9. Reading window bars correctly
+
+Every window bar is captioned — "43% used" or "43% left" — so a Codex `0%` and
+a Claude `100%` can't be misread as opposite states. Bars *fill as your quota
+burns*; for `left`-semantics sources (some relays report it that way) the
+caption + fill are inverted for you, and the status thresholds follow the true
+consumed share.
+
+## 10. Privacy
 
 The app talks **only** to the providers' own APIs with your credentials, from
 your machine. No telemetry, no middle server, no analytics.
