@@ -153,6 +153,16 @@ try CustomProviderStore.save([])
 check("registry re-reads custom store (removed config disappears)",
       !ProviderRegistry.adapters.contains { $0.id == "relay-test" })
 
+// Skeleton no-clobber: an update that writes EMPTY values (exactly what the
+// launch skeleton does) must never erase an existing credential — this bug
+// silently wiped saved keys at every app launch.
+try EnvStore.shared.update(["SMOKE_SKELETON_KEY": "real-secret"])
+try EnvStore.shared.update(["SMOKE_SKELETON_KEY": "", "SMOKE_FRESH_SLOT": ""])
+check("empty update does NOT clobber an existing value",
+      EnvStore.shared.key("SMOKE_SKELETON_KEY") == "real-secret")
+check("empty update creates a fresh empty slot",
+      EnvStore.shared.key("SMOKE_FRESH_SLOT") == nil)
+
 // `.left` semantics inversion: a row reporting 95% LEFT must threshold as
 // nearly exhausted (95% consumed), never naive-anything; the raw .used row at
 // 95 consumed is red by design.

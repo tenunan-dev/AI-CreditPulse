@@ -43,11 +43,19 @@ struct SecureKeyField: NSViewRepresentable {
             guard let field = obj.object as? KeyTextField else { return }
             parent.text = field.stringValue
         }
+
+        // Return NEVER reaches a field-override — the field editor (NSTextView)
+        // consumes the key and reports it here. This is the reliable submit path.
+        func control(_ control: NSControl, textView: NSTextView,
+                     doCommandBy commandSelector: Selector) -> Bool {
+            guard commandSelector == #selector(NSResponder.insertNewline(_:)) else { return false }
+            parent.onSubmit()
+            return true
+        }
     }
 }
 
-/// NSSecureTextField with the two behavioral extras: caret-at-left on focus
-/// and a submit hook. Target/action based (nib-free).
+/// NSSecureTextField with the caret-at-left behavioral extra.
 final class KeyTextField: NSSecureTextField {
     var onSubmitHandler: (() -> Void)?
 
@@ -58,14 +66,5 @@ final class KeyTextField: NSSecureTextField {
             editor.selectedRange = NSRange(location: 0, length: 0)
         }
         return became
-    }
-
-    override func textDidChange(_ notification: Notification) {
-        // Sync already flows through the NSTextFieldDelegate; nothing extra.
-    }
-
-    override func insertNewline(_ sender: Any?) {
-        window?.makeFirstResponder(nil)   // blur first, then submit
-        onSubmitHandler?()
     }
 }

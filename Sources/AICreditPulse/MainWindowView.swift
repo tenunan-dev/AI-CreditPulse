@@ -56,6 +56,14 @@ struct MainWindowView: View {
                 Text("Keys are stored locally — nothing leaves this machine.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                Button {
+                    // Manual escape hatch: edit the key file directly. Saving
+                    // in TextEdit hot-reloads (file watcher) and rows refresh.
+                    NSWorkspace.shared.open(EnvStore.defaultURL)
+                } label: {
+                    Label("Open .env", systemImage: "square.and.pencil")
+                }
+                .help("Edit ~/Library/Application Support/AI CreditPulse/.env by hand")
                 Button("Refresh statuses") {
                     Task { await app.refresh(force: true) }
                 }

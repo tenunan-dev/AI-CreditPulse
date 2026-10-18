@@ -144,7 +144,19 @@ public final class EnvStore: @unchecked Sendable {
             }
             if let v = update[name] {
                 written.insert(name)
-                result.append("\(name)=\(quoted(v))")
+                let rawExisting = trimmed.split(separator: "=", maxSplits: 1,
+                                                omittingEmptySubsequences: false)[1]
+                    .trimmingCharacters(in: .whitespaces)
+                // NO-CLOBBER: a launch-time skeleton update writes empty values
+                // for every slot; an empty write must NEVER erase a credential
+                // already in the file. (This bug silently wiped keys at every
+                // app launch — `KEY=""` everywhere.)
+                if v.trimmingCharacters(in: .whitespaces).isEmpty,
+                   !Self.isEmptyStoredValue(rawExisting) {
+                    result.append(rawLine)
+                } else {
+                    result.append("\(name)=\(quoted(v))")
+                }
             } else {
                 result.append(rawLine)
             }
@@ -162,8 +174,19 @@ public final class EnvStore: @unchecked Sendable {
             .contentModificationDate
     }
 
-    private func quoted(_ value: String) -> String {
-        // Credential pastes can come with trailing newlines (or a whole
+    /// True when a stored raw value means "empty" — bare nothing or the two
+    /// quoted-empts (`""` / `''`), which the reader strips back to empty.
+    private static func isEmptyStoredValue(_ raw: String) -> Bool {
+        var value = raw
+        if value.count >= 2 {
+            for quote in ["\"", "'"] where value.hasPrefix(quote) && value.hasSuffix(quote) {
+                value = String(value.dropFirst().dropLast())
+            }
+        }
+        return value.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private func quoted(_ value: String) -> String {        // Credential pastes can come with trailing newlines (or a whole
         // multi-line clipboard): a newline inside a value breaks the one-line
         // KEY=VALUE format, splitting the file and orphaning quote fragments —
         // which then hid saved keys. Trim, and keep values single-line.
@@ -191,6 +214,14 @@ public final class EnvStore: @unchecked Sendable {
                 .contentModificationDate
             self.lock.unlock()
             NotificationCenter.default.post(name: .envStoreDidChange, object: nil)
+            // Atomic writes (our `update`, TextEdit's save) REPLACE the file —
+            // the old fd now points at a dead inode, so resubscribe to keep
+            // watching further edits.
+            if self.watchedPath == Self.defaultURL.path {
+                self.watcher?.cancel()
+                self.watcher = nil
+                self.watch()
+            }
         }
         source.setCancelHandler { close(fd) }
         source.resume()
