@@ -417,7 +417,7 @@ struct MainWindowView: View {
         case "deepseek": "https://platform.deepseek.com/api_keys"
         case "openrouter": "https://openrouter.ai/keys"
         case "zai": "https://z.ai/manage-apikey/apikey-list"
-        case "opencode": "https://opencode.ai/auth"
+        case "opencode": "https://opencode.ai/console"
         case "ilmu": nil
         default: nil
         }

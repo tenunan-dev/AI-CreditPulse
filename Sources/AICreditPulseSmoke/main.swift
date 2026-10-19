@@ -200,6 +200,7 @@ let safeVocabulary: [(String) -> Bool] = [
     { $0 == "no apiKey in auth.json" },
     { $0 == "no ~/.commandcode/auth.json" },
     { $0 == "token expired — run `claude` once to refresh" },
+    { $0 == "API key refused or expired — create a new one in OpenCode Console" },
     { $0 == "provider request failed (HTTP" },          // transport prefix
     { $0 == "provider request timed out" },
     { $0 == "provider unreachable" },

@@ -324,6 +324,7 @@ public struct OpenCodeAdapter: ProviderAdapter {
 
         let outcome: Result<Sample, ProviderFailure> = await ProviderHTTP.cached("opencode") {
             var lastError = "provider data unavailable"
+            var refusedAll = false
             for key in keys {
                 do {
                     let payload = try await ProviderHTTP.get(
@@ -333,13 +334,18 @@ public struct OpenCodeAdapter: ProviderAdapter {
                 } catch let error {
                     lastError = ProviderHTTP.safe(error)
                     // A refused credential moves on to the next key; every other
-                    // failure is final.
+                    // failure is final. When EVERY credential is refused (the
+                    // API's own `api_key_expired` code is common — keys don't
+                    // renew with re-signing), say exactly what to do.
                     if case .http(let code)? = error as? HTTPError, code == 401 || code == 403 {
+                        refusedAll = true
                         continue
                     }
+                    refusedAll = false
                     break
                 }
             }
+            if refusedAll { lastError = "API key refused or expired — create a new one in OpenCode Console" }
             return Sample(ok: false, error: lastError, data: nil)
         }
         guard case .success(let sample) = outcome else {
